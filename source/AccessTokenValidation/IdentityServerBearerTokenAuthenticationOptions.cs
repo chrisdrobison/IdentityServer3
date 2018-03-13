@@ -18,7 +18,6 @@ using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.OAuth;
 using System;
 using System.Collections.Generic;
-using System.IdentityModel.Tokens;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;

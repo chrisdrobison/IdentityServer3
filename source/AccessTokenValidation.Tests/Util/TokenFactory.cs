@@ -61,10 +61,13 @@ namespace AccessTokenValidation.Tests.Util
                 additionalClaims,
                 DateTime.UtcNow,
                 DateTime.UtcNow.AddSeconds(ttl),
-                new Microsoft.IdentityModel.Tokens.SigningCredentials(new X509SecurityKey(signingCertificate ?? DefaultSigningCertificate), SecurityAlgorithms.RsaSha256));
+                new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                    new X509SecurityKey(signingCertificate ?? DefaultSigningCertificate),
+                    SecurityAlgorithms.RsaSha256))
+            {
+                Header = {["kid"] = Base64Url.Encode(credential.Certificate.GetCertHash())}
+            };
 
-            token.Header.Add(
-                "kid", Base64Url.Encode(credential.Certificate.GetCertHash()));
 
             return token;
         }
