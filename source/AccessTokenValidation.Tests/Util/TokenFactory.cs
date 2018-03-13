@@ -2,9 +2,12 @@
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.IdentityModel.Tokens;
+using SecurityAlgorithms = Microsoft.IdentityModel.Tokens.SecurityAlgorithms;
 
 namespace AccessTokenValidation.Tests.Util
 {
@@ -58,7 +61,7 @@ namespace AccessTokenValidation.Tests.Util
                 additionalClaims,
                 DateTime.UtcNow,
                 DateTime.UtcNow.AddSeconds(ttl),
-                credential);
+                new Microsoft.IdentityModel.Tokens.SigningCredentials(new X509SecurityKey(signingCertificate ?? DefaultSigningCertificate), SecurityAlgorithms.RsaSha256));
 
             token.Header.Add(
                 "kid", Base64Url.Encode(credential.Certificate.GetCertHash()));
@@ -68,7 +71,7 @@ namespace AccessTokenValidation.Tests.Util
 
         public static string CreateTokenString(JwtSecurityToken token)
         {
-            JwtSecurityTokenHandler.OutboundClaimTypeMap = new Dictionary<string, string>();
+            JwtSecurityTokenHandler.DefaultInboundClaimTypeMap = new Dictionary<string, string>();
 
             var handler = new JwtSecurityTokenHandler();
             return handler.WriteToken(token);

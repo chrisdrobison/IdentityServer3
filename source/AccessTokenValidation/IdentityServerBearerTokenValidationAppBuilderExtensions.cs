@@ -14,33 +14,42 @@
  * limitations under the License.
  */
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using IdentityServer3.AccessTokenValidation;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Owin.Extensions;
 using Microsoft.Owin.Logging;
 using Microsoft.Owin.Security.Jwt;
 using Microsoft.Owin.Security.OAuth;
-using System;
-using System.IdentityModel.Tokens;
-using System.Linq;
-using System.Threading;
 
 namespace Owin
 {
     /// <summary>
-    /// AppBuilder extensions for identity server token validation
+    ///     AppBuilder extensions for identity server token validation
     /// </summary>
     public static class IdentityServerBearerTokenValidationAppBuilderExtensions
     {
         /// <summary>
-        /// Add identity server token authentication to the pipeline.
+        ///     Add identity server token authentication to the pipeline.
         /// </summary>
         /// <param name="app">The application.</param>
         /// <param name="options">The options.</param>
         /// <returns></returns>
-        public static IAppBuilder UseIdentityServerBearerTokenAuthentication(this IAppBuilder app, IdentityServerBearerTokenAuthenticationOptions options)
+        public static IAppBuilder UseIdentityServerBearerTokenAuthentication(this IAppBuilder app,
+            IdentityServerBearerTokenAuthenticationOptions options)
         {
-            if (app == null) throw new ArgumentNullException("app");
-            if (options == null) throw new ArgumentNullException("options");
+            if (app == null)
+            {
+                throw new ArgumentNullException(nameof(app));
+            }
+
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
 
             var loggerFactory = app.GetLoggerFactory();
             var middlewareOptions = new IdentityServerOAuthBearerAuthenticationOptions();
@@ -104,9 +113,10 @@ namespace Owin
             return app;
         }
 
-        private static Lazy<OAuthBearerAuthenticationOptions> ConfigureEndpointValidation(IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
+        private static Lazy<OAuthBearerAuthenticationOptions> ConfigureEndpointValidation(
+            IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
         {
-            return new Lazy<OAuthBearerAuthenticationOptions>(() => 
+            return new Lazy<OAuthBearerAuthenticationOptions>(() =>
             {
                 if (options.EnableValidationResultCache)
                 {
@@ -120,7 +130,7 @@ namespace Owin
                 {
                     AuthenticationMode = options.AuthenticationMode,
                     AuthenticationType = options.AuthenticationType,
-                    Provider = new ContextTokenProvider(options.TokenProvider),
+                    Provider = new ContextTokenProvider(options.TokenProvider)
                 };
 
                 if (!string.IsNullOrEmpty(options.ClientId) || options.IntrospectionHttpHandler != null)
@@ -133,13 +143,13 @@ namespace Owin
                 }
 
                 return bearerOptions;
-
             }, true);
         }
 
-        internal static Lazy<OAuthBearerAuthenticationOptions> ConfigureLocalValidation(IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
+        internal static Lazy<OAuthBearerAuthenticationOptions> ConfigureLocalValidation(
+            IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
         {
-            return new Lazy<OAuthBearerAuthenticationOptions>(() => 
+            return new Lazy<OAuthBearerAuthenticationOptions>(() =>
             {
                 JwtFormat tokenFormat = null;
 
@@ -154,10 +164,10 @@ namespace Owin
                     {
                         ValidIssuer = options.IssuerName,
                         ValidAudience = audience,
-                        IssuerSigningToken = new X509SecurityToken(options.SigningCertificate),
+                        IssuerSigningKey = new X509SecurityKey(options.SigningCertificate),
 
                         NameClaimType = options.NameClaimType,
-                        RoleClaimType = options.RoleClaimType,
+                        RoleClaimType = options.RoleClaimType
                     };
 
                     tokenFormat = new JwtFormat(valParams);
@@ -191,7 +201,7 @@ namespace Owin
                     }
                     else
                     {
-                        valParams.IssuerSigningKeyResolver = ResolveRsaKeys;
+                        valParams.IssuerSigningKeyResolver = IssuerSigningKeyResolver;
                     }
 
                     tokenFormat = new JwtFormat(valParams, issuerProvider);
@@ -207,33 +217,15 @@ namespace Owin
                 };
 
                 return bearerOptions;
-
             }, LazyThreadSafetyMode.PublicationOnly);
         }
 
-        private static SecurityKey ResolveRsaKeys(
-            string token, 
-            SecurityToken securityToken, 
-            SecurityKeyIdentifier keyIdentifier, 
+        private static IEnumerable<SecurityKey> IssuerSigningKeyResolver(string token,
+            SecurityToken securityToken,
+            string kid,
             TokenValidationParameters validationParameters)
         {
-            string id = null;
-            foreach (var keyId in keyIdentifier)
-            {
-                var nk = keyId as NamedKeySecurityKeyIdentifierClause;
-                if (nk != null)
-                {
-                    id = nk.Id;
-                    break;
-                }
-            }
-
-            if (id == null) return null;
-
-            var issuerToken = validationParameters.IssuerSigningTokens.FirstOrDefault(it => it.Id == id);
-            if (issuerToken == null) return null;
-
-            return issuerToken.SecurityKeys.FirstOrDefault();
+            return validationParameters.IssuerSigningKeys.Where(key => key.KeyId == kid);
         }
     }
 }

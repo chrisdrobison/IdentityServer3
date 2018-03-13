@@ -14,79 +14,51 @@
  * limitations under the License.
  */
 
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.Owin.Logging;
-using Microsoft.Owin.Security.Jwt;
 using System;
 using System.Collections.Generic;
-using System.IdentityModel.Tokens;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Threading;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.Owin.Logging;
+using Microsoft.Owin.Security.Jwt;
 
 namespace IdentityServer3.AccessTokenValidation
 {
-    internal class DiscoveryDocumentIssuerSecurityTokenProvider : IIssuerSecurityTokenProvider
+    internal class DiscoveryDocumentIssuerSecurityTokenProvider : IIssuerSecurityKeyProvider
     {
-        private readonly ReaderWriterLockSlim _synclock = new ReaderWriterLockSlim();
-        private readonly ConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
+        private readonly string _discoveryEndpoint;
+        private readonly HttpMessageHandler _handler;
         private readonly ILogger _logger;
-        private string _issuer;
-        private IEnumerable<SecurityToken> _tokens;
+        private readonly IdentityServerBearerTokenAuthenticationOptions _options;
+        private readonly ReaderWriterLockSlim _synclock = new ReaderWriterLockSlim();
+        private DateTime _lastConfigUpdate = DateTime.MinValue;
+        private OpenIdConnectConfiguration _openIdConnectConfiguration;
 
-        public DiscoveryDocumentIssuerSecurityTokenProvider(string discoveryEndpoint, IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
+        public DiscoveryDocumentIssuerSecurityTokenProvider(string discoveryEndpoint,
+            IdentityServerBearerTokenAuthenticationOptions options, ILoggerFactory loggerFactory)
         {
-            _logger = loggerFactory.Create(this.GetType().FullName);
+            _discoveryEndpoint = discoveryEndpoint;
+            _options = options;
+            _logger = loggerFactory.Create(GetType().FullName);
 
-            var handler = options.BackchannelHttpHandler ?? new WebRequestHandler();
+            _handler = options.BackchannelHttpHandler ?? new WebRequestHandler();
 
             if (options.BackchannelCertificateValidator != null)
             {
                 // Set the cert validate callback
-                var webRequestHandler = handler as WebRequestHandler;
-                if (webRequestHandler == null)
-                {
-                    throw new InvalidOperationException("The back channel handler must derive from WebRequestHandler in order to use a certificate validator");
-                }
-                webRequestHandler.ServerCertificateValidationCallback = options.BackchannelCertificateValidator.Validate;
+                if (!(_handler is WebRequestHandler webRequestHandler))
+                    throw new InvalidOperationException(
+                        "The back channel handler must derive from WebRequestHandler in order to use a certificate validator");
+                webRequestHandler.ServerCertificateValidationCallback =
+                    options.BackchannelCertificateValidator.Validate;
             }
 
-            _configurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(discoveryEndpoint, new HttpClient(handler))
-            {
-                AutomaticRefreshInterval = options.AutomaticRefreshInterval
-            };
-
-            if (!options.DelayLoadMetadata)
-            {
-                RetrieveMetadata();
-            }
-        }
-
-        /// <summary>
-        /// Gets the issuer the credentials are for.
-        /// </summary>
-        /// <value>
-        /// The issuer the credentials are for.
-        /// </value>
-        public string Issuer
-        {
-            get
-            {
-                RetrieveMetadata();
-                _synclock.EnterReadLock();
-                try
-                {
-                    return _issuer;
-                }
-                finally
-                {
-                    _synclock.ExitReadLock();
-                }
-            }
+            if (!options.DelayLoadMetadata) RetrieveMetadata();
         }
 
         /// <value>
-        /// The identity server default audience
+        ///     The identity server default audience
         /// </value>
         public string Audience
         {
@@ -96,7 +68,7 @@ namespace IdentityServer3.AccessTokenValidation
                 _synclock.EnterReadLock();
                 try
                 {
-                    var issuer = _issuer.EnsureTrailingSlash();
+                    var issuer = _openIdConnectConfiguration.Issuer.EnsureTrailingSlash();
                     return issuer + "resources";
                 }
                 finally
@@ -107,12 +79,12 @@ namespace IdentityServer3.AccessTokenValidation
         }
 
         /// <summary>
-        /// Gets all known security tokens.
+        ///     Gets the issuer the credentials are for.
         /// </summary>
         /// <value>
-        /// All known security tokens.
+        ///     The issuer the credentials are for.
         /// </value>
-        public IEnumerable<SecurityToken> SecurityTokens
+        public string Issuer
         {
             get
             {
@@ -120,7 +92,30 @@ namespace IdentityServer3.AccessTokenValidation
                 _synclock.EnterReadLock();
                 try
                 {
-                    return _tokens;
+                    return _openIdConnectConfiguration.Issuer;
+                }
+                finally
+                {
+                    _synclock.ExitReadLock();
+                }
+            }
+        }
+
+        /// <summary>
+        ///     Gets all known security keys.
+        /// </summary>
+        /// <value>
+        ///     All known security keys.
+        /// </value>
+        public IEnumerable<SecurityKey> SecurityKeys
+        {
+            get
+            {
+                RetrieveMetadata();
+                _synclock.EnterReadLock();
+                try
+                {
+                    return _openIdConnectConfiguration.SigningKeys;
                 }
                 finally
                 {
@@ -134,33 +129,25 @@ namespace IdentityServer3.AccessTokenValidation
             _synclock.EnterWriteLock();
             try
             {
-                var result = AsyncHelper.RunSync(async () => await _configurationManager.GetConfigurationAsync());
+                var now = DateTime.Now;
+                if (_openIdConnectConfiguration == null ||
+                    _lastConfigUpdate - now >= _options.AutomaticRefreshInterval)
+                {
+                    _openIdConnectConfiguration = AsyncHelper.RunSync(async () =>
+                        await OpenIdConnectConfigurationRetriever.GetAsync(_discoveryEndpoint, new HttpClient(_handler),
+                            CancellationToken.None));
+                    _lastConfigUpdate = now;
+                }
 
-                if (result.JsonWebKeySet == null)
+                if (_openIdConnectConfiguration.SigningKeys == null)
                 {
                     _logger.WriteError("Discovery document has no configured signing key. aborting.");
                     throw new InvalidOperationException("Discovery document has no configured signing key. aborting.");
                 }
-
-                var tokens = new List<SecurityToken>();
-                foreach (var key in result.JsonWebKeySet.Keys)
-                {
-                    var rsa = RSA.Create();
-                    rsa.ImportParameters(new RSAParameters
-                    {
-                        Exponent = Base64UrlEncoder.DecodeBytes(key.E),
-                        Modulus = Base64UrlEncoder.DecodeBytes(key.N)
-                    });
-
-                    tokens.Add(new RsaSecurityToken(rsa, key.Kid));
-                }
-
-                _issuer = result.Issuer;
-                _tokens = tokens;
             }
             catch (Exception ex)
             {
-                _logger.WriteError("Error contacting discovery endpoint: " + ex.ToString());
+                _logger.WriteError("Error contacting discovery endpoint: " + ex);
                 throw;
             }
             finally

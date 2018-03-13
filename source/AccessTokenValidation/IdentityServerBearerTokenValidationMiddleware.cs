@@ -14,59 +14,59 @@
  * limitations under the License.
  */
 
-using Microsoft.Owin;
-using Microsoft.Owin.Builder;
-using Microsoft.Owin.Logging;
-using Microsoft.Owin.Security.OAuth;
-using Owin;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Owin;
+using Microsoft.Owin.Builder;
+using Microsoft.Owin.Logging;
+using Microsoft.Owin.Security.OAuth;
+using Owin;
 using AppFunc = System.Func<System.Collections.Generic.IDictionary<string, object>, System.Threading.Tasks.Task>;
 
 namespace IdentityServer3.AccessTokenValidation
 {
     /// <summary>
-    /// Middleware for validating identityserver access tokens
+    ///     Middleware for validating identityserver access tokens
     /// </summary>
     public class IdentityServerBearerTokenValidationMiddleware
     {
-        private readonly AppFunc _next;
-        private readonly Lazy<AppFunc> _localValidationFunc;
         private readonly Lazy<AppFunc> _endpointValidationFunc;
-        private readonly IdentityServerOAuthBearerAuthenticationOptions _options;
+        private readonly Lazy<AppFunc> _localValidationFunc;
         private readonly ILogger _logger;
+        private readonly AppFunc _next;
+        private readonly IdentityServerOAuthBearerAuthenticationOptions _options;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="IdentityServerBearerTokenValidationMiddleware" /> class.
+        ///     Initializes a new instance of the <see cref="IdentityServerBearerTokenValidationMiddleware" /> class.
         /// </summary>
         /// <param name="next">The next middleware.</param>
         /// <param name="app">The app builder.</param>
         /// <param name="options">The options.</param>
         /// <param name="loggerFactory">The logger factory.</param>
-        public IdentityServerBearerTokenValidationMiddleware(AppFunc next, IAppBuilder app, IdentityServerOAuthBearerAuthenticationOptions options, ILoggerFactory loggerFactory)
+        public IdentityServerBearerTokenValidationMiddleware(AppFunc next, IAppBuilder app,
+            IdentityServerOAuthBearerAuthenticationOptions options, ILoggerFactory loggerFactory)
         {
             _next = next;
             _options = options;
-            _logger = loggerFactory.Create(this.GetType().FullName);
+            _logger = loggerFactory.Create(GetType().FullName);
 
             if (options.LocalValidationOptions != null)
             {
-                _localValidationFunc = new Lazy<AppFunc>(() => 
+                _localValidationFunc = new Lazy<AppFunc>(() =>
                 {
                     var localBuilder = app.New();
                     localBuilder.UseOAuthBearerAuthentication(options.LocalValidationOptions.Value);
                     localBuilder.Run(ctx => next(ctx.Environment));
                     return localBuilder.Build();
-
                 }, LazyThreadSafetyMode.PublicationOnly);
             }
 
             if (options.EndpointValidationOptions != null)
             {
-                _endpointValidationFunc = new Lazy<AppFunc>(() => 
+                _endpointValidationFunc = new Lazy<AppFunc>(() =>
                 {
                     var endpointBuilder = app.New();
                     endpointBuilder.Properties["host.AppName"] = "foobar";
@@ -74,13 +74,12 @@ namespace IdentityServer3.AccessTokenValidation
                     endpointBuilder.UseOAuthBearerAuthentication(options.EndpointValidationOptions.Value);
                     endpointBuilder.Run(ctx => next(ctx.Environment));
                     return endpointBuilder.Build();
-
                 }, true);
             }
         }
 
         /// <summary>
-        /// Invokes the middleware.
+        ///     Invokes the middleware.
         /// </summary>
         /// <param name="environment">The environment.</param>
         /// <returns></returns>
@@ -107,6 +106,7 @@ namespace IdentityServer3.AccessTokenValidation
                     await _localValidationFunc.Value(environment);
                     return;
                 }
+
                 // otherwise use validation endpoint
                 if (_endpointValidationFunc != null)
                 {
@@ -135,7 +135,7 @@ namespace IdentityServer3.AccessTokenValidation
         {
             // find token in default location
             string requestToken = null;
-            string authorization = context.Request.Headers.Get("Authorization");
+            var authorization = context.Request.Headers.Get("Authorization");
             if (!string.IsNullOrEmpty(authorization))
             {
                 if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))

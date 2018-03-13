@@ -22,6 +22,7 @@ using System.IdentityModel.Tokens;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.IdentityModel.Tokens;
 
 namespace IdentityServer3.AccessTokenValidation
 {
