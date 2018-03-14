@@ -10,7 +10,7 @@ properties {
 	$nuget_path = "$src_directory\.nuget\nuget.exe"
 	
 	$buildNumber = 0;
-	$version = "2.16.0.0"
+	$version = "3.0.0.0"
 	$preRelease = $null
 }
 
@@ -24,7 +24,7 @@ task Clean {
 }
 
 task Compile -depends UpdateVersion {
-	exec { msbuild /nologo /verbosity:q $sln_file /p:Configuration=$target_config /p:TargetFrameworkVersion=v4.5.2 }
+	exec { msbuild /verbosity:q $sln_file /p:Configuration=$target_config /p:TargetFrameworkVersion=v4.6.2 }
 }
 
 task RunTests -depends Compile {
@@ -64,7 +64,7 @@ task ILMerge -depends Compile {
 	}
 
 	New-Item $dist_directory\lib\net45 -Type Directory
-	Invoke-Expression "$ilmerge_path /targetplatform:v4 /internalize:ilmerge.exclude /allowDup /target:library /out:$dist_directory\lib\net45\IdentityServer.v3.AccessTokenValidation.dll $input_dlls"
+	Invoke-Expression "$ilmerge_path /targetplatform:v4 /internalize:ilmerge.exclude /allowDup /target:library /out:$dist_directory\lib\net461\IdentityServer.v3.AccessTokenValidation.dll $input_dlls"
 }
 
 task CreateNuGetPackage -depends Compile {
@@ -85,8 +85,8 @@ task CreateNuGetPackage -depends Compile {
 		$packageVersion = $packageVersion + "-build" + $buildNumber.ToString().PadLeft(5,'0')
 	}
 	
-	New-Item $dist_directory\lib\net45 -Type Directory
-	copy-item $output_directory\IdentityServer3.AccessTokenValidation.* $dist_directory\lib\net45
+	New-Item $dist_directory\lib\net461 -Type Directory
+	copy-item $output_directory\IdentityServer3.AccessTokenValidation.* $dist_directory\lib\net461
 
 	copy-item $src_directory\IdentityServer3.AccessTokenValidation.nuspec $dist_directory
 	exec { . $nuget_path pack $dist_directory\IdentityServer3.AccessTokenValidation.nuspec -BasePath $dist_directory -o $dist_directory -version $packageVersion }
